@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using PaymentOrchestrator.Api.Authentication;
+using PaymentOrchestrator.Api.Idempotency;
 using PaymentOrchestrator.Application.Payments;
 
 namespace PaymentOrchestrator.Api.Endpoints;
@@ -18,6 +19,7 @@ internal static class PaymentEndpoints
                 return Results.Created($"/v1/payments/{payment.Id}", payment);
             })
             .WithName("CreatePayment")
+            .WithIdempotency(required: true)
             .Produces<PaymentResponse>(StatusCodes.Status201Created)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
@@ -32,18 +34,21 @@ internal static class PaymentEndpoints
         group.MapPost("/{id:guid}/capture", async (Guid id, ClaimsPrincipal user, PaymentService service, CancellationToken ct) =>
                 ToResult(await service.CaptureAsync(user.GetMerchantId(), id, ct)))
             .WithName("CapturePayment")
+            .WithIdempotency()
             .Produces<PaymentResponse>()
             .ProducesProblem(StatusCodes.Status409Conflict);
 
         group.MapPost("/{id:guid}/cancel", async (Guid id, ClaimsPrincipal user, PaymentService service, CancellationToken ct) =>
                 ToResult(await service.CancelAsync(user.GetMerchantId(), id, ct)))
             .WithName("CancelPayment")
+            .WithIdempotency()
             .Produces<PaymentResponse>()
             .ProducesProblem(StatusCodes.Status409Conflict);
 
         group.MapPost("/{id:guid}/refunds", async (Guid id, RefundPaymentRequest request, ClaimsPrincipal user, PaymentService service, CancellationToken ct) =>
                 ToResult(await service.RefundAsync(user.GetMerchantId(), id, request, ct)))
             .WithName("RefundPayment")
+            .WithIdempotency(required: true)
             .Produces<PaymentResponse>()
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);

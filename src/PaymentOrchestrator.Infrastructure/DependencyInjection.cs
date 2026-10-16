@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using PaymentOrchestrator.Application.Abstractions;
+using PaymentOrchestrator.Application.Idempotency;
+using PaymentOrchestrator.Infrastructure.Idempotency;
 using PaymentOrchestrator.Infrastructure.Persistence;
 
 namespace PaymentOrchestrator.Infrastructure;
@@ -19,6 +21,7 @@ public static class DependencyInjection
 
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<PaymentsDbContext>());
         services.AddScoped<IPaymentRepository, PaymentRepository>();
+        services.AddScoped<IIdempotencyStore, PostgresIdempotencyStore>();
 
         return services;
     }

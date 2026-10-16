@@ -38,6 +38,13 @@ if (app.Environment.IsDevelopment())
     await scope.ServiceProvider.GetRequiredService<PaymentsDbContext>().Database.MigrateAsync();
 }
 
+// Lets the idempotency filter hash the raw body after model binding has read it.
+app.Use((context, next) =>
+{
+    context.Request.EnableBuffering();
+    return next(context);
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 
