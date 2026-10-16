@@ -392,3 +392,8 @@ dotnet_naming_style.s_camelcase.capitalization = camel_case
 [tests/**.cs]
 dotnet_diagnostic.CA1707.severity = none
 dotnet_diagnostic.CA1515.severity = none
+
+# EF Core generated migrations
+[src/**/Migrations/*.cs]
+generated_code = true
+dotnet_analyzer_diagnostic.severity = none

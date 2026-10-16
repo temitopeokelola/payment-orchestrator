@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.EntityFrameworkCore;
 using PaymentOrchestrator.Api.Authentication;
 using PaymentOrchestrator.Api.Endpoints;
 using PaymentOrchestrator.Api.ErrorHandling;
 using PaymentOrchestrator.Application;
 using PaymentOrchestrator.Infrastructure;
+using PaymentOrchestrator.Infrastructure.Persistence;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -31,6 +33,9 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.MapScalarApiReference();
+
+    await using var scope = app.Services.CreateAsyncScope();
+    await scope.ServiceProvider.GetRequiredService<PaymentsDbContext>().Database.MigrateAsync();
 }
 
 app.UseAuthentication();
