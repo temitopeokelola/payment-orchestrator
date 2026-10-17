@@ -14,6 +14,12 @@ internal sealed class InMemoryPayments : IPaymentRepository, IUnitOfWork
     public Task<Payment?> GetAsync(Guid id, string merchantId, CancellationToken cancellationToken) =>
         Task.FromResult(_payments.TryGetValue(id, out var p) && p.MerchantId == merchantId ? p : null);
 
+    public Task<Payment?> FindAsync(Guid id, CancellationToken cancellationToken) =>
+        Task.FromResult(_payments.GetValueOrDefault(id));
+
+    public Task ExecuteInTransactionAsync(Func<CancellationToken, Task> work, CancellationToken cancellationToken) =>
+        work(cancellationToken);
+
     public Task SaveChangesAsync(CancellationToken cancellationToken)
     {
         SaveCount++;
