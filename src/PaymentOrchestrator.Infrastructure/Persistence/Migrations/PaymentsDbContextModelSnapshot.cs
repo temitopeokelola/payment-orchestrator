@@ -279,6 +279,62 @@ namespace PaymentOrchestrator.Infrastructure.Persistence.Migrations
                     b.ToTable("outbox_messages", (string)null);
                 });
 
+            modelBuilder.Entity("PaymentOrchestrator.Infrastructure.Persistence.PaymentAttemptRecord", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("code");
+
+                    b.Property<double>("LatencyMs")
+                        .HasColumnType("double precision")
+                        .HasColumnName("latency_ms");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("operation");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("outcome");
+
+                    b.Property<Guid>("PaymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("payment_id");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("provider");
+
+                    b.HasKey("Id")
+                        .HasName("pk_payment_attempts");
+
+                    b.HasIndex("PaymentId", "At")
+                        .HasDatabaseName("ix_payment_attempts_payment_id_at");
+
+                    b.HasIndex("Provider", "At")
+                        .HasDatabaseName("ix_payment_attempts_provider_at");
+
+                    b.ToTable("payment_attempts", (string)null);
+                });
+
             modelBuilder.Entity("PaymentOrchestrator.Infrastructure.Webhooks.ProviderWebhookEventRecord", b =>
                 {
                     b.Property<string>("Provider")

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using PaymentOrchestrator.Application.Abstractions;
 using PaymentOrchestrator.Application.Providers;
@@ -11,6 +12,7 @@ public sealed partial class PaymentService(
     IUnitOfWork unitOfWork,
     IPaymentRouter router,
     IProviderRegistry providers,
+    IPaymentAttemptLog attempts,
     TimeProvider clock,
     ILogger<PaymentService> logger)
 {
@@ -54,7 +56,7 @@ public sealed partial class PaymentService(
         foreach (var provider in candidates)
         {
             payment.AssignProvider(provider.Name, clock.GetUtcNow());
-            var result = await provider.AuthorizeAsync(command, cancellationToken);
+            var result = await CallAsync(payment, provider, "authorize", ct => provider.AuthorizeAsync(command, ct), cancellationToken);
 
             switch (result.Outcome)
             {
@@ -92,7 +94,7 @@ public sealed partial class PaymentService(
 
     private async Task TryCaptureAfterAuthorizeAsync(Payment payment, IPaymentProvider provider, CancellationToken cancellationToken)
     {
-        var result = await provider.CaptureAsync(payment.Id, payment.ProviderReference!, payment.Amount, cancellationToken);
+        var result = await CallAsync(payment, provider, "capture", ct => provider.CaptureAsync(payment.Id, payment.ProviderReference!, payment.Amount, ct), cancellationToken);
         if (result.Outcome == ProviderOutcome.Approved)
         {
             payment.Capture(clock.GetUtcNow());
@@ -118,7 +120,7 @@ public sealed partial class PaymentService(
                 payment.Capture(clock.GetUtcNow()); // throws the domain's invalid transition error
             }
 
-            EnsureApproved(await provider.CaptureAsync(payment.Id, payment.ProviderReference!, payment.Amount, ct));
+            EnsureApproved(await CallAsync(payment, provider, "capture", c => provider.CaptureAsync(payment.Id, payment.ProviderReference!, payment.Amount, c), ct));
             payment.Capture(clock.GetUtcNow());
         }, cancellationToken);
 
@@ -138,7 +140,7 @@ public sealed partial class PaymentService(
                     throw new ProviderOperationException("cancel_not_supported", $"{provider.Name} does not support cancelling authorizations.", retryable: false);
                 }
 
-                EnsureApproved(await provider.CancelAsync(payment.Id, payment.ProviderReference!, ct));
+                EnsureApproved(await CallAsync(payment, provider, "cancel", c => provider.CancelAsync(payment.Id, payment.ProviderReference!, c), ct));
             }
 
             payment.Cancel(clock.GetUtcNow());
@@ -152,7 +154,7 @@ public sealed partial class PaymentService(
 
             // Deterministic per refund step, so a retried request reuses the provider's idempotency.
             var refundKey = $"{payment.Id:N}-refund-{payment.RefundedAmount.AmountMinor}";
-            EnsureApproved(await provider.RefundAsync(payment.Id, payment.ProviderReference!, amount, refundKey, ct));
+            EnsureApproved(await CallAsync(payment, provider, "refund", c => provider.RefundAsync(payment.Id, payment.ProviderReference!, amount, refundKey, c), ct));
 
             payment.Refund(amount, clock.GetUtcNow());
         }, cancellationToken);
@@ -170,19 +172,48 @@ public sealed partial class PaymentService(
         }
 
         var provider = payment.Provider is null ? null : providers.Find(payment.Provider);
-        if (provider is null)
+        try
         {
-            // No provider was ever involved (for example a payment that failed routing); only local changes apply.
-            await change(payment, NullProvider.Instance, cancellationToken);
+            // A payment that never reached a provider (for example one that failed routing) only has local changes.
+            await change(payment, provider ?? NullProvider.Instance, cancellationToken);
         }
-        else
+        catch (ProviderOperationException)
         {
-            await change(payment, provider, cancellationToken);
+            // Keep the record of the failed provider call; the payment itself was not changed.
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+            throw;
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return PaymentResponse.From(payment);
     }
+
+    private async Task<ProviderResult> CallAsync(
+        Payment payment,
+        IPaymentProvider provider,
+        string operation,
+        Func<CancellationToken, Task<ProviderResult>> call,
+        CancellationToken cancellationToken)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var result = await call(cancellationToken);
+
+        attempts.Record(new PaymentAttempt(
+            payment.Id,
+            provider.Name,
+            operation,
+            result.Outcome.ToString().ToLowerInvariant(),
+            result.Code,
+            Math.Round(Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1),
+            clock.GetUtcNow()));
+
+        return result;
+    }
+
+    public async Task<IReadOnlyList<PaymentAttempt>?> GetAttemptsAsync(string merchantId, Guid paymentId, CancellationToken cancellationToken) =>
+        await payments.GetAsync(paymentId, merchantId, cancellationToken) is null
+            ? null
+            : await attempts.ListAsync(paymentId, cancellationToken);
 
     private static void EnsureApproved(ProviderResult result)
     {

@@ -16,7 +16,8 @@ public static class DependencyInjection
     {
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IProviderRegistry, ProviderRegistry>();
-        services.AddSingleton<IPaymentRouter, CapabilityRouter>();
+        services.AddSingleton<IProviderHealth, ProviderHealthTracker>();
+        services.AddSingleton<IPaymentRouter, HealthAwareRouter>();
         services.AddScoped<PaymentService>();
         services.AddScoped<ProviderWebhookService>();
         services.AddScoped<LedgerQueries>();

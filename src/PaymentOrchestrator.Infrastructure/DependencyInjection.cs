@@ -2,16 +2,21 @@ using System.Net.Http.Headers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using PaymentOrchestrator.Application.Abstractions;
 using PaymentOrchestrator.Application.Idempotency;
 using PaymentOrchestrator.Application.Ledger;
 using PaymentOrchestrator.Application.Outbox;
+using PaymentOrchestrator.Application.Payments;
 using PaymentOrchestrator.Application.Providers;
+using PaymentOrchestrator.Application.Routing;
 using PaymentOrchestrator.Application.Webhooks;
 using PaymentOrchestrator.Infrastructure.Idempotency;
 using PaymentOrchestrator.Infrastructure.Messaging;
 using PaymentOrchestrator.Infrastructure.Outbox;
 using PaymentOrchestrator.Infrastructure.Persistence;
+using PaymentOrchestrator.Infrastructure.Providers;
 using PaymentOrchestrator.Infrastructure.Providers.Paystack;
 using PaymentOrchestrator.Infrastructure.Providers.Simulator;
 using PaymentOrchestrator.Infrastructure.Providers.Stripe;
@@ -34,12 +39,22 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<PaymentsDbContext>());
         services.AddScoped<IPaymentRepository, PaymentRepository>();
         services.AddScoped<ILedgerRepository, LedgerRepository>();
+        services.AddScoped<IPaymentAttemptLog, EfPaymentAttemptLog>();
         services.AddScoped<IIdempotencyStore, PostgresIdempotencyStore>();
         services.AddScoped<IProviderWebhookInbox, PostgresWebhookInbox>();
 
         services.Configure<LedgerOptions>(configuration.GetSection(LedgerOptions.SectionName));
 
+        services.Configure<RoutingOptions>(configuration.GetSection(RoutingOptions.SectionName));
         services.AddPaymentProviders(configuration.GetSection("Providers"));
+
+        // Every provider the application sees goes through a circuit breaker.
+        services.Replace(ServiceDescriptor.Singleton<IProviderRegistry>(sp => new ProviderRegistry(
+            sp.GetServices<IPaymentProvider>().Select(p => new ResilientPaymentProvider(
+                p,
+                sp.GetRequiredService<IProviderHealth>(),
+                sp.GetRequiredService<IOptions<RoutingOptions>>().Value,
+                sp.GetRequiredService<TimeProvider>())))));
         services.AddMessaging(configuration);
 
         return services;
