@@ -25,15 +25,4 @@ internal static class LedgerEndpoints
 
         return app;
     }
-
-    /// <summary>Platform-wide view of every account. Development only until operator auth exists.</summary>
-    public static IEndpointRouteBuilder MapTrialBalanceEndpoint(this IEndpointRouteBuilder app)
-    {
-        app.MapGet("/dev/ledger/trial-balance", async (LedgerQueries ledger, CancellationToken ct) =>
-                Results.Ok(await ledger.GetTrialBalanceAsync(ct)))
-            .WithTags("Ledger")
-            .Produces<TrialBalanceResponse>();
-
-        return app;
-    }
 }

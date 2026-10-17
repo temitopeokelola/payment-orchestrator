@@ -15,6 +15,7 @@ public sealed class PaymentsApiFactory : WebApplicationFactory<Program>, IAsyncL
 {
     public const string DemoApiKey = "sk_test_demo_merchant_key";
     public const string DemoWebhookSecret = "whsec_demo_merchant";
+    public const string OperatorApiKey = "sk_ops_demo_operator_key";
 
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
     private readonly RabbitMqContainer _rabbit = new RabbitMqBuilder("rabbitmq:4-alpine").Build();
@@ -54,6 +55,13 @@ public sealed class PaymentsApiFactory : WebApplicationFactory<Program>, IAsyncL
     {
         var client = CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", DemoApiKey);
+        return client;
+    }
+
+    public HttpClient CreateOperatorClient()
+    {
+        var client = CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", OperatorApiKey);
         return client;
     }
 

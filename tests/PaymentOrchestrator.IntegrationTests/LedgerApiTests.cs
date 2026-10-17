@@ -79,10 +79,26 @@ public sealed class LedgerApiTests(PaymentsApiFactory factory)
     {
         await CreatePaymentAsync(12_345);
 
-        var trial = await _client.GetFromJsonAsync<TrialBalanceResponse>("/dev/ledger/trial-balance");
+        var trial = await factory.CreateOperatorClient().GetFromJsonAsync<TrialBalanceResponse>("/v1/admin/ledger/trial-balance");
 
         Assert.True(trial!.Balanced);
         Assert.All(trial.TotalsByCurrency.Values, total => Assert.Equal(0, total));
+    }
+
+    [Fact]
+    public async Task Trial_balance_requires_operator_key()
+    {
+        var response = await _client.GetAsync("/v1/admin/ledger/trial-balance");
+
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Operator_cannot_call_merchant_endpoints()
+    {
+        var response = await factory.CreateOperatorClient().GetAsync("/v1/balance");
+
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]

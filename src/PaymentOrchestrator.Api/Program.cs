@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using PaymentOrchestrator.Api.Authentication;
 using PaymentOrchestrator.Api.Endpoints;
@@ -18,7 +19,12 @@ builder.Services.Configure<MerchantOptions>(builder.Configuration.GetSection(Mer
 builder.Services
     .AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationHandler.SchemeName, null);
-builder.Services.AddAuthorization();
+builder.Services.Configure<OperatorOptions>(builder.Configuration.GetSection(OperatorOptions.SectionName));
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy(AuthorizationPolicies.Merchant, p => p.RequireClaim(ApiKeyAuthenticationHandler.MerchantIdClaim))
+    .AddPolicy(AuthorizationPolicies.Operator, p => p.RequireRole(ApiKeyAuthenticationHandler.OperatorRole))
+    // Endpoints that just say RequireAuthorization() are merchant endpoints.
+    .SetDefaultPolicy(new AuthorizationPolicyBuilder().RequireClaim(ApiKeyAuthenticationHandler.MerchantIdClaim).Build());
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
@@ -54,11 +60,11 @@ app.MapLedgerEndpoints();
 app.MapProviderEndpoints();
 app.MapWebhookDeliveryEndpoints();
 app.MapProviderWebhookEndpoints();
+app.MapAdminEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
     app.MapSimulatorEndpoints();
-    app.MapTrialBalanceEndpoint();
     app.MapDevWebhookReceiver();
 }
 
