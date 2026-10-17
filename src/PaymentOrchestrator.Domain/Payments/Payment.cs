@@ -116,7 +116,7 @@ public sealed class Payment : AggregateRoot
 
         CapturedAmount = Amount;
         Transition(PaymentStatus.Captured, now);
-        Raise(new PaymentCaptured(Id, Amount, now));
+        Raise(new PaymentCaptured(Id, MerchantId, Provider!, Amount, now));
     }
 
     /// <summary>Validates a refund without changing state, so it can be checked before calling the provider.</summary>
@@ -145,7 +145,7 @@ public sealed class Payment : AggregateRoot
         var totalRefunded = RefundedAmount.Add(amount);
         RefundedAmount = totalRefunded;
         Transition(totalRefunded == CapturedAmount ? PaymentStatus.Refunded : PaymentStatus.PartiallyRefunded, now);
-        Raise(new PaymentRefunded(Id, amount, totalRefunded, now));
+        Raise(new PaymentRefunded(Id, MerchantId, Provider!, amount, totalRefunded, now));
     }
 
     public void Fail(string reason, DateTimeOffset now)
