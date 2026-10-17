@@ -23,6 +23,42 @@ namespace PaymentOrchestrator.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("PaymentOrchestrator.Domain.Ledger.JournalEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character(3)")
+                        .HasColumnName("currency")
+                        .IsFixedLength();
+
+                    b.Property<Guid>("PaymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("payment_id");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id")
+                        .HasName("pk_ledger_entries");
+
+                    b.HasIndex("PaymentId")
+                        .HasDatabaseName("ix_ledger_entries_payment_id");
+
+                    b.ToTable("ledger_entries", (string)null);
+                });
+
             modelBuilder.Entity("PaymentOrchestrator.Domain.Payments.Payment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -231,6 +267,50 @@ namespace PaymentOrchestrator.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_provider_webhook_events_payment_id");
 
                     b.ToTable("provider_webhook_events", (string)null);
+                });
+
+            modelBuilder.Entity("PaymentOrchestrator.Domain.Ledger.JournalEntry", b =>
+                {
+                    b.OwnsMany("PaymentOrchestrator.Domain.Ledger.Posting", "Postings", b1 =>
+                        {
+                            b1.Property<long>("Id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("bigint")
+                                .HasColumnName("id");
+
+                            NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b1.Property<long>("Id"));
+
+                            b1.Property<string>("Account")
+                                .IsRequired()
+                                .HasMaxLength(128)
+                                .HasColumnType("character varying(128)")
+                                .HasColumnName("account");
+
+                            b1.Property<long>("AmountMinor")
+                                .HasColumnType("bigint")
+                                .HasColumnName("amount");
+
+                            b1.Property<Guid>("EntryId")
+                                .HasColumnType("uuid")
+                                .HasColumnName("entry_id");
+
+                            b1.HasKey("Id")
+                                .HasName("pk_ledger_postings");
+
+                            b1.HasIndex("Account")
+                                .HasDatabaseName("ix_ledger_postings_account");
+
+                            b1.HasIndex("EntryId")
+                                .HasDatabaseName("ix_ledger_postings_entry_id");
+
+                            b1.ToTable("ledger_postings", (string)null);
+
+                            b1.WithOwner()
+                                .HasForeignKey("EntryId")
+                                .HasConstraintName("fk_ledger_postings_ledger_entries_entry_id");
+                        });
+
+                    b.Navigation("Postings");
                 });
 #pragma warning restore 612, 618
         }

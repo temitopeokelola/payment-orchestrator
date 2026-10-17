@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using PaymentOrchestrator.Application.Abstractions;
 using PaymentOrchestrator.Application.Idempotency;
+using PaymentOrchestrator.Application.Ledger;
 using PaymentOrchestrator.Application.Providers;
 using PaymentOrchestrator.Application.Webhooks;
 using PaymentOrchestrator.Infrastructure.Idempotency;
@@ -26,10 +27,14 @@ public static class DependencyInjection
             .UseNpgsql(connectionString)
             .UseSnakeCaseNamingConvention());
 
+        services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<PaymentsDbContext>());
         services.AddScoped<IPaymentRepository, PaymentRepository>();
+        services.AddScoped<ILedgerRepository, LedgerRepository>();
         services.AddScoped<IIdempotencyStore, PostgresIdempotencyStore>();
         services.AddScoped<IProviderWebhookInbox, PostgresWebhookInbox>();
+
+        services.Configure<LedgerOptions>(configuration.GetSection(LedgerOptions.SectionName));
 
         services.AddPaymentProviders(configuration.GetSection("Providers"));
 
