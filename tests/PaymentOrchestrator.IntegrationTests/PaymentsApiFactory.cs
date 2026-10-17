@@ -33,6 +33,19 @@ public sealed class PaymentsApiFactory : WebApplicationFactory<Program>, IAsyncL
         builder.UseSetting("Workers:WebhookMaxAttempts", "3");
         builder.UseSetting("Workers:WebhookRetryBaseSeconds", "0");
 
+        // Health-based demotion is covered by unit tests; keep routing deterministic across shared integration tests.
+        builder.UseSetting("Routing:MinimumSamples", "100000");
+        builder.UseSetting("Routing:CircuitMinimumThroughput", "6");
+        builder.UseSetting("Routing:CircuitBreakSeconds", "1");
+
+        // A dedicated pair of providers for circuit breaker tests, isolated by currency.
+        builder.UseSetting("Providers:Simulators:2:Name", "chaos-primary");
+        builder.UseSetting("Providers:Simulators:2:Currencies:0", "ZAR");
+        builder.UseSetting("Providers:Simulators:2:FeeBasisPoints", "100");
+        builder.UseSetting("Providers:Simulators:3:Name", "chaos-backup");
+        builder.UseSetting("Providers:Simulators:3:Currencies:0", "ZAR");
+        builder.UseSetting("Providers:Simulators:3:FeeBasisPoints", "300");
+
         builder.ConfigureTestServices(services =>
             services.AddHttpClient(WebhookSigner.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Webhooks));
     }

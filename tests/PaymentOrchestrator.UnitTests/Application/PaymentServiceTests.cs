@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using PaymentOrchestrator.Application.Payments;
 using PaymentOrchestrator.Application.Providers;
 using PaymentOrchestrator.Application.Routing;
@@ -11,11 +12,14 @@ public class PaymentServiceTests
     private readonly InMemoryPayments _store = new();
     private readonly FakeProvider _cheap = new("cheap", feeBasisPoints: 100);
     private readonly FakeProvider _backup = new("backup", feeBasisPoints: 200);
+    private readonly InMemoryAttemptLog _attempts = new();
 
     private PaymentService CreateService()
     {
         var registry = new ProviderRegistry([_cheap, _backup]);
-        return new PaymentService(_store, _store, new CapabilityRouter(registry), registry, TimeProvider.System, NullLogger<PaymentService>.Instance);
+        var options = Options.Create(new RoutingOptions());
+        var router = new HealthAwareRouter(registry, new ProviderHealthTracker(TimeProvider.System, options), options);
+        return new PaymentService(_store, _store, router, registry, _attempts, TimeProvider.System, NullLogger<PaymentService>.Instance);
     }
 
     private static CreatePaymentRequest Request(bool capture = true) =>
@@ -52,6 +56,19 @@ public class PaymentServiceTests
         Assert.Equal("created", payment.Status);
         Assert.Equal("cheap", payment.Provider);
         Assert.Equal(0, _backup.AuthorizeCalls);
+    }
+
+    [Fact]
+    public async Task Records_every_provider_attempt()
+    {
+        _cheap.AuthorizeResults.Enqueue(ProviderResult.Unavailable("provider_outage"));
+
+        var payment = await CreateService().CreateAsync("m1", Request(capture: false), CancellationToken.None);
+
+        Assert.Equal(
+            [("cheap", "authorize", "unavailable"), ("backup", "authorize", "approved")],
+            _attempts.Attempts.Select(a => (a.Provider, a.Operation, a.Outcome)));
+        Assert.All(_attempts.Attempts, a => Assert.Equal(payment.Id, a.PaymentId));
     }
 
     [Fact]
