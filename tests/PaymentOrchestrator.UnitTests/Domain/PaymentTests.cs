@@ -8,7 +8,7 @@ public class PaymentTests
     private static readonly DateTimeOffset Now = new(2026, 1, 15, 10, 0, 0, TimeSpan.Zero);
 
     private static Payment NewPayment(long amount = 10_000) =>
-        Payment.Create("merchant_1", new Money(amount, "NGN"), "Order #1001", Now);
+        Payment.Create("merchant_1", new Money(amount, "NGN"), "Order #1001", "sim_card_approved", "ada@example.com", Now);
 
     private static Payment CapturedPayment(long amount = 10_000)
     {
@@ -137,5 +137,36 @@ public class PaymentTests
         payment.Cancel(Now);
 
         Assert.Equal(PaymentStatus.Cancelled, payment.Status);
+    }
+
+    [Fact]
+    public void Payment_method_is_required()
+    {
+        var ex = Assert.Throws<DomainException>(() =>
+            Payment.Create("merchant_1", new Money(1_000, "NGN"), "Order", " ", null, Now));
+
+        Assert.Equal("payment.payment_method_required", ex.Code);
+    }
+
+    [Fact]
+    public void Provider_can_be_assigned_before_outcome_is_known()
+    {
+        var payment = NewPayment();
+
+        payment.AssignProvider("simulator-a", Now);
+
+        Assert.Equal("simulator-a", payment.Provider);
+        Assert.Equal(PaymentStatus.Created, payment.Status);
+    }
+
+    [Fact]
+    public void Refund_validation_does_not_change_state()
+    {
+        var payment = CapturedPayment(10_000);
+
+        payment.EnsureCanRefund(new Money(5_000, "NGN"));
+
+        Assert.Equal(PaymentStatus.Captured, payment.Status);
+        Assert.Equal(Money.Zero("NGN"), payment.RefundedAmount);
     }
 }

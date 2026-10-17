@@ -9,14 +9,24 @@ public sealed class Payment : AggregateRoot
     {
         MerchantId = null!;
         Description = null!;
+        PaymentMethod = null!;
     }
 
-    private Payment(Guid id, string merchantId, Money amount, string description, DateTimeOffset now)
+    private Payment(
+        Guid id,
+        string merchantId,
+        Money amount,
+        string description,
+        string paymentMethod,
+        string? customerEmail,
+        DateTimeOffset now)
     {
         Id = id;
         MerchantId = merchantId;
         Amount = amount;
         Description = description;
+        PaymentMethod = paymentMethod;
+        CustomerEmail = customerEmail;
         Status = PaymentStatus.Created;
         CapturedAmount = Money.Zero(amount.Currency);
         RefundedAmount = Money.Zero(amount.Currency);
@@ -28,6 +38,11 @@ public sealed class Payment : AggregateRoot
     public string MerchantId { get; private set; }
     public Money Amount { get; private set; }
     public string Description { get; private set; }
+
+    /// <summary>Provider-issued token for the card or account (never raw card data).</summary>
+    public string PaymentMethod { get; private set; }
+
+    public string? CustomerEmail { get; private set; }
     public PaymentStatus Status { get; private set; }
     public string? Provider { get; private set; }
     public string? ProviderReference { get; private set; }
@@ -37,7 +52,13 @@ public sealed class Payment : AggregateRoot
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
-    public static Payment Create(string merchantId, Money amount, string description, DateTimeOffset now)
+    public static Payment Create(
+        string merchantId,
+        Money amount,
+        string description,
+        string paymentMethod,
+        string? customerEmail,
+        DateTimeOffset now)
     {
         if (string.IsNullOrWhiteSpace(merchantId))
         {
@@ -49,9 +70,34 @@ public sealed class Payment : AggregateRoot
             throw new DomainException("payment.zero_amount", "Payment amount must be greater than zero.");
         }
 
-        var payment = new Payment(Guid.CreateVersion7(now), merchantId, amount, description.Trim(), now);
+        if (string.IsNullOrWhiteSpace(paymentMethod))
+        {
+            throw new DomainException("payment.payment_method_required", "A payment method token is required.");
+        }
+
+        var payment = new Payment(
+            Guid.CreateVersion7(now),
+            merchantId,
+            amount,
+            description.Trim(),
+            paymentMethod.Trim(),
+            string.IsNullOrWhiteSpace(customerEmail) ? null : customerEmail.Trim(),
+            now);
+
         payment.Raise(new PaymentCreated(payment.Id, merchantId, amount, now));
         return payment;
+    }
+
+    /// <summary>
+    /// Records which provider is handling the payment before the outcome is known, so a timed-out
+    /// attempt can still be matched to a later webhook or settlement report.
+    /// </summary>
+    public void AssignProvider(string provider, DateTimeOffset now)
+    {
+        EnsureStatus(PaymentStatus.Created, "assign a provider to");
+
+        Provider = provider;
+        UpdatedAt = now;
     }
 
     public void Authorize(string provider, string providerReference, DateTimeOffset now)
@@ -73,7 +119,8 @@ public sealed class Payment : AggregateRoot
         Raise(new PaymentCaptured(Id, Amount, now));
     }
 
-    public void Refund(Money amount, DateTimeOffset now)
+    /// <summary>Validates a refund without changing state, so it can be checked before calling the provider.</summary>
+    public void EnsureCanRefund(Money amount)
     {
         if (Status is not (PaymentStatus.Captured or PaymentStatus.PartiallyRefunded))
         {
@@ -85,12 +132,17 @@ public sealed class Payment : AggregateRoot
             throw new DomainException("payment.zero_refund", "Refund amount must be greater than zero.");
         }
 
-        var totalRefunded = RefundedAmount.Add(amount);
-        if (totalRefunded.IsGreaterThan(CapturedAmount))
+        if (RefundedAmount.Add(amount).IsGreaterThan(CapturedAmount))
         {
             throw new DomainException("payment.refund_exceeds_capture", "Refund exceeds the captured amount.");
         }
+    }
 
+    public void Refund(Money amount, DateTimeOffset now)
+    {
+        EnsureCanRefund(amount);
+
+        var totalRefunded = RefundedAmount.Add(amount);
         RefundedAmount = totalRefunded;
         Transition(totalRefunded == CapturedAmount ? PaymentStatus.Refunded : PaymentStatus.PartiallyRefunded, now);
         Raise(new PaymentRefunded(Id, amount, totalRefunded, now));

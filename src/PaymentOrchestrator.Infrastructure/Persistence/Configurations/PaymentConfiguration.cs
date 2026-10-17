@@ -15,6 +15,8 @@ internal sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(p => p.MerchantId).HasMaxLength(64).IsRequired();
         builder.Property(p => p.Description).HasMaxLength(256).IsRequired();
         builder.Property(p => p.Status).HasConversion<string>().HasMaxLength(32);
+        builder.Property(p => p.PaymentMethod).HasMaxLength(128).IsRequired();
+        builder.Property(p => p.CustomerEmail).HasMaxLength(254);
         builder.Property(p => p.Provider).HasMaxLength(32);
         builder.Property(p => p.ProviderReference).HasMaxLength(128);
         builder.Property(p => p.FailureReason).HasMaxLength(256);

@@ -2,7 +2,18 @@ using PaymentOrchestrator.Domain.Payments;
 
 namespace PaymentOrchestrator.Application.Payments;
 
-public sealed record CreatePaymentRequest(long Amount, string Currency, string? Description);
+/// <param name="Amount">Amount in the currency's minor unit.</param>
+/// <param name="PaymentMethod">Provider token, for example <c>pm_card_visa</c> (Stripe) or <c>sim_card_approved</c> (simulator).</param>
+/// <param name="Capture">Capture immediately (default) or only authorize and capture later.</param>
+/// <param name="Provider">Optional preferred provider. Routing still falls back to others if it is unavailable.</param>
+public sealed record CreatePaymentRequest(
+    long Amount,
+    string Currency,
+    string? Description,
+    string PaymentMethod,
+    string? CustomerEmail = null,
+    bool Capture = true,
+    string? Provider = null);
 
 public sealed record RefundPaymentRequest(long Amount);
 

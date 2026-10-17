@@ -33,6 +33,11 @@ namespace PaymentOrchestrator.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("CustomerEmail")
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)")
+                        .HasColumnName("customer_email");
+
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -49,6 +54,12 @@ namespace PaymentOrchestrator.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("merchant_id");
+
+                    b.Property<string>("PaymentMethod")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("payment_method");
 
                     b.Property<string>("Provider")
                         .HasMaxLength(32)

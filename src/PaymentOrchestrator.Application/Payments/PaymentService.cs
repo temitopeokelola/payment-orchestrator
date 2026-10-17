@@ -1,9 +1,18 @@
+using Microsoft.Extensions.Logging;
 using PaymentOrchestrator.Application.Abstractions;
+using PaymentOrchestrator.Application.Providers;
+using PaymentOrchestrator.Application.Routing;
 using PaymentOrchestrator.Domain.Payments;
 
 namespace PaymentOrchestrator.Application.Payments;
 
-public sealed class PaymentService(IPaymentRepository payments, IUnitOfWork unitOfWork, TimeProvider clock)
+public sealed partial class PaymentService(
+    IPaymentRepository payments,
+    IUnitOfWork unitOfWork,
+    IPaymentRouter router,
+    IProviderRegistry providers,
+    TimeProvider clock,
+    ILogger<PaymentService> logger)
 {
     public async Task<PaymentResponse> CreateAsync(string merchantId, CreatePaymentRequest request, CancellationToken cancellationToken)
     {
@@ -11,12 +20,88 @@ public sealed class PaymentService(IPaymentRepository payments, IUnitOfWork unit
             merchantId,
             new Money(request.Amount, request.Currency),
             request.Description ?? string.Empty,
+            request.PaymentMethod,
+            request.CustomerEmail,
             clock.GetUtcNow());
 
+        // Persist before calling out, so the payment exists even if we crash mid-request.
         payments.Add(payment);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
+        var candidates = router.Rank(new RoutingRequest(payment.Amount, !request.Capture, request.Provider));
+        if (candidates.Count == 0)
+        {
+            payment.Fail("no_eligible_provider", clock.GetUtcNow());
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+            return PaymentResponse.From(payment);
+        }
+
+        await AuthorizeWithFailoverAsync(payment, candidates, request.Capture, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+
         return PaymentResponse.From(payment);
+    }
+
+    private async Task AuthorizeWithFailoverAsync(
+        Payment payment,
+        IReadOnlyList<IPaymentProvider> candidates,
+        bool capture,
+        CancellationToken cancellationToken)
+    {
+        var command = new AuthorizeCommand(
+            payment.Id, payment.Amount, payment.PaymentMethod, payment.CustomerEmail, payment.Description, capture);
+
+        foreach (var provider in candidates)
+        {
+            payment.AssignProvider(provider.Name, clock.GetUtcNow());
+            var result = await provider.AuthorizeAsync(command, cancellationToken);
+
+            switch (result.Outcome)
+            {
+                case ProviderOutcome.Approved:
+                    payment.Authorize(provider.Name, result.ProviderReference!, clock.GetUtcNow());
+                    if (result.Captured)
+                    {
+                        payment.Capture(clock.GetUtcNow());
+                    }
+                    else if (capture)
+                    {
+                        await TryCaptureAfterAuthorizeAsync(payment, provider, cancellationToken);
+                    }
+
+                    return;
+
+                case ProviderOutcome.Declined:
+                    payment.Fail(result.Code ?? "declined", clock.GetUtcNow());
+                    return;
+
+                case ProviderOutcome.Unknown:
+                    // The provider may have charged the customer. Failing over could charge twice, so leave the
+                    // payment in "created" and let the provider webhook or reconciliation settle it.
+                    LogUnknownOutcome(payment.Id, provider.Name, result.Code);
+                    return;
+
+                case ProviderOutcome.Unavailable:
+                    LogFailover(payment.Id, provider.Name, result.Code);
+                    continue;
+            }
+        }
+
+        payment.Fail("all_providers_unavailable", clock.GetUtcNow());
+    }
+
+    private async Task TryCaptureAfterAuthorizeAsync(Payment payment, IPaymentProvider provider, CancellationToken cancellationToken)
+    {
+        var result = await provider.CaptureAsync(payment.Id, payment.ProviderReference!, payment.Amount, cancellationToken);
+        if (result.Outcome == ProviderOutcome.Approved)
+        {
+            payment.Capture(clock.GetUtcNow());
+        }
+        else
+        {
+            // Authorized funds are still held; the merchant can retry capture explicitly.
+            LogCaptureFailed(payment.Id, provider.Name, result.Code);
+        }
     }
 
     public async Task<PaymentResponse?> GetAsync(string merchantId, Guid paymentId, CancellationToken cancellationToken)
@@ -26,22 +111,56 @@ public sealed class PaymentService(IPaymentRepository payments, IUnitOfWork unit
     }
 
     public Task<PaymentResponse?> CaptureAsync(string merchantId, Guid paymentId, CancellationToken cancellationToken) =>
-        MutateAsync(merchantId, paymentId, p => p.Capture(clock.GetUtcNow()), cancellationToken);
+        MutateAsync(merchantId, paymentId, async (payment, provider, ct) =>
+        {
+            if (payment.Status != PaymentStatus.Authorized)
+            {
+                payment.Capture(clock.GetUtcNow()); // throws the domain's invalid transition error
+            }
+
+            EnsureApproved(await provider.CaptureAsync(payment.Id, payment.ProviderReference!, payment.Amount, ct));
+            payment.Capture(clock.GetUtcNow());
+        }, cancellationToken);
 
     public Task<PaymentResponse?> CancelAsync(string merchantId, Guid paymentId, CancellationToken cancellationToken) =>
-        MutateAsync(merchantId, paymentId, p => p.Cancel(clock.GetUtcNow()), cancellationToken);
+        MutateAsync(merchantId, paymentId, async (payment, provider, ct) =>
+        {
+            if (payment.Status == PaymentStatus.Created && payment.Provider is not null)
+            {
+                // A provider attempt ended with an unknown outcome; the customer may already have been charged.
+                throw new ProviderOperationException("outcome_pending", "The provider outcome is still pending. Retry once it settles.", retryable: true);
+            }
+
+            if (payment.Status == PaymentStatus.Authorized)
+            {
+                if (!provider.Capabilities.SupportsCancel)
+                {
+                    throw new ProviderOperationException("cancel_not_supported", $"{provider.Name} does not support cancelling authorizations.", retryable: false);
+                }
+
+                EnsureApproved(await provider.CancelAsync(payment.Id, payment.ProviderReference!, ct));
+            }
+
+            payment.Cancel(clock.GetUtcNow());
+        }, cancellationToken);
 
     public Task<PaymentResponse?> RefundAsync(string merchantId, Guid paymentId, RefundPaymentRequest request, CancellationToken cancellationToken) =>
-        MutateAsync(
-            merchantId,
-            paymentId,
-            p => p.Refund(new Money(request.Amount, p.Amount.Currency), clock.GetUtcNow()),
-            cancellationToken);
+        MutateAsync(merchantId, paymentId, async (payment, provider, ct) =>
+        {
+            var amount = new Money(request.Amount, payment.Amount.Currency);
+            payment.EnsureCanRefund(amount);
+
+            // Deterministic per refund step, so a retried request reuses the provider's idempotency.
+            var refundKey = $"{payment.Id:N}-refund-{payment.RefundedAmount.AmountMinor}";
+            EnsureApproved(await provider.RefundAsync(payment.Id, payment.ProviderReference!, amount, refundKey, ct));
+
+            payment.Refund(amount, clock.GetUtcNow());
+        }, cancellationToken);
 
     private async Task<PaymentResponse?> MutateAsync(
         string merchantId,
         Guid paymentId,
-        Action<Payment> change,
+        Func<Payment, IPaymentProvider, CancellationToken, Task> change,
         CancellationToken cancellationToken)
     {
         var payment = await payments.GetAsync(paymentId, merchantId, cancellationToken);
@@ -50,9 +169,40 @@ public sealed class PaymentService(IPaymentRepository payments, IUnitOfWork unit
             return null;
         }
 
-        change(payment);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        var provider = payment.Provider is null ? null : providers.Find(payment.Provider);
+        if (provider is null)
+        {
+            // No provider was ever involved (for example a payment that failed routing); only local changes apply.
+            await change(payment, NullProvider.Instance, cancellationToken);
+        }
+        else
+        {
+            await change(payment, provider, cancellationToken);
+        }
 
+        await unitOfWork.SaveChangesAsync(cancellationToken);
         return PaymentResponse.From(payment);
     }
+
+    private static void EnsureApproved(ProviderResult result)
+    {
+        switch (result.Outcome)
+        {
+            case ProviderOutcome.Approved:
+                return;
+            case ProviderOutcome.Declined:
+                throw new ProviderOperationException(result.Code ?? "provider_declined", result.Message ?? "The provider declined the operation.", retryable: false);
+            default:
+                throw new ProviderOperationException(result.Code ?? "provider_unavailable", result.Message ?? "The provider could not complete the operation. Retry later.", retryable: true);
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Provider {Provider} unavailable for payment {PaymentId} ({Code}), failing over")]
+    private partial void LogFailover(Guid paymentId, string provider, string? code);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Unknown outcome from {Provider} for payment {PaymentId} ({Code}); awaiting webhook or reconciliation")]
+    private partial void LogUnknownOutcome(Guid paymentId, string provider, string? code);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Capture after authorization failed at {Provider} for payment {PaymentId} ({Code})")]
+    private partial void LogCaptureFailed(Guid paymentId, string provider, string? code);
 }
