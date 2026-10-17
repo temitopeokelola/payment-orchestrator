@@ -61,8 +61,9 @@ public sealed class MerchantWebhookTests(PaymentsApiFactory factory)
         {
             await using var scope = factory.Services.CreateAsyncScope();
             var db = scope.ServiceProvider.GetRequiredService<PaymentsDbContext>();
-            var messages = await db.Set<OutboxMessage>().AsNoTracking()
-                .Where(m => m.Data.Contains(payment.Id.ToString()))
+            var messages = await db.Set<OutboxMessage>()
+                .FromSqlInterpolated($"SELECT * FROM outbox_messages WHERE data->>'id' = {payment.Id.ToString()}")
+                .AsNoTracking()
                 .ToListAsync();
             return messages.Count == 3 && messages.All(m => m.PublishedAt != null) ? messages : null;
         });
