@@ -192,6 +192,46 @@ namespace PaymentOrchestrator.Infrastructure.Persistence.Migrations
 
                     b.ToTable("idempotency_keys", (string)null);
                 });
+
+            modelBuilder.Entity("PaymentOrchestrator.Infrastructure.Webhooks.ProviderWebhookEventRecord", b =>
+                {
+                    b.Property<string>("Provider")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("provider");
+
+                    b.Property<string>("EventId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<Guid?>("PaymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("payment_id");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("received_at");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Provider", "EventId")
+                        .HasName("pk_provider_webhook_events");
+
+                    b.HasIndex("PaymentId")
+                        .HasDatabaseName("ix_provider_webhook_events_payment_id");
+
+                    b.ToTable("provider_webhook_events", (string)null);
+                });
 #pragma warning restore 612, 618
         }
     }

@@ -10,4 +10,7 @@ internal sealed class PaymentRepository(PaymentsDbContext db) : IPaymentReposito
 
     public Task<Payment?> GetAsync(Guid id, string merchantId, CancellationToken cancellationToken) =>
         db.Payments.SingleOrDefaultAsync(p => p.Id == id && p.MerchantId == merchantId, cancellationToken);
+
+    public Task<Payment?> FindAsync(Guid id, CancellationToken cancellationToken) =>
+        db.Payments.SingleOrDefaultAsync(p => p.Id == id, cancellationToken);
 }

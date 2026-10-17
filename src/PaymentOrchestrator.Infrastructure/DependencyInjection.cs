@@ -5,11 +5,13 @@ using Microsoft.Extensions.DependencyInjection;
 using PaymentOrchestrator.Application.Abstractions;
 using PaymentOrchestrator.Application.Idempotency;
 using PaymentOrchestrator.Application.Providers;
+using PaymentOrchestrator.Application.Webhooks;
 using PaymentOrchestrator.Infrastructure.Idempotency;
 using PaymentOrchestrator.Infrastructure.Persistence;
 using PaymentOrchestrator.Infrastructure.Providers.Paystack;
 using PaymentOrchestrator.Infrastructure.Providers.Simulator;
 using PaymentOrchestrator.Infrastructure.Providers.Stripe;
+using PaymentOrchestrator.Infrastructure.Webhooks;
 
 namespace PaymentOrchestrator.Infrastructure;
 
@@ -27,6 +29,7 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<PaymentsDbContext>());
         services.AddScoped<IPaymentRepository, PaymentRepository>();
         services.AddScoped<IIdempotencyStore, PostgresIdempotencyStore>();
+        services.AddScoped<IProviderWebhookInbox, PostgresWebhookInbox>();
 
         services.AddPaymentProviders(configuration.GetSection("Providers"));
 
