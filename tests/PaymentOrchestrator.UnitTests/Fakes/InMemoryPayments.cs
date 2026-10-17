@@ -17,6 +17,9 @@ internal sealed class InMemoryPayments : IPaymentRepository, IUnitOfWork
     public Task<Payment?> FindAsync(Guid id, CancellationToken cancellationToken) =>
         Task.FromResult(_payments.GetValueOrDefault(id));
 
+    public Task<IReadOnlyList<Payment>> ListForProviderAsync(string provider, DateTimeOffset since, DateTimeOffset until, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<Payment>>([.. _payments.Values.Where(p => p.Provider == provider && p.CreatedAt >= since && p.CreatedAt < until)]);
+
     public Task ExecuteInTransactionAsync(Func<CancellationToken, Task> work, CancellationToken cancellationToken) =>
         work(cancellationToken);
 
