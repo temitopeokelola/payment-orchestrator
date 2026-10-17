@@ -37,6 +37,9 @@ services:
       RabbitMq__ConnectionString: amqp://guest:guest@rabbitmq:5672
       Merchants__Credentials__0__WebhookUrl: http://localhost:8080/dev/webhook-receiver/merchant_demo
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      # Simulated provider response times, so traces and load tests look like real network calls.
+      Providers__Simulators__0__LatencyMs: ${SIM_A_LATENCY_MS:-40}
+      Providers__Simulators__1__LatencyMs: ${SIM_B_LATENCY_MS:-60}
     ports:
       - "8080:8080"
     depends_on:
