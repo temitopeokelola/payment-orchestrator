@@ -50,11 +50,13 @@ app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).ExcludeFromDescription();
 app.MapPaymentEndpoints();
+app.MapLedgerEndpoints();
 app.MapProviderWebhookEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
     app.MapSimulatorEndpoints();
+    app.MapTrialBalanceEndpoint();
 }
 
 app.Run();
