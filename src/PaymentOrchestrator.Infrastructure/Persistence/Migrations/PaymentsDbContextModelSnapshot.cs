@@ -335,6 +335,56 @@ namespace PaymentOrchestrator.Infrastructure.Persistence.Migrations
                     b.ToTable("payment_attempts", (string)null);
                 });
 
+            modelBuilder.Entity("PaymentOrchestrator.Infrastructure.Reconciliation.ReconciliationRunRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<string>("Items")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("items");
+
+                    b.Property<int>("Matched")
+                        .HasColumnType("integer")
+                        .HasColumnName("matched");
+
+                    b.Property<DateTimeOffset>("PeriodFrom")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("period_from");
+
+                    b.Property<DateTimeOffset>("PeriodTo")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("period_to");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("provider");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<int>("Unresolved")
+                        .HasColumnType("integer")
+                        .HasColumnName("unresolved");
+
+                    b.HasKey("Id")
+                        .HasName("pk_reconciliation_runs");
+
+                    b.HasIndex("Provider", "StartedAt")
+                        .HasDatabaseName("ix_reconciliation_runs_provider_started_at");
+
+                    b.ToTable("reconciliation_runs", (string)null);
+                });
+
             modelBuilder.Entity("PaymentOrchestrator.Infrastructure.Webhooks.ProviderWebhookEventRecord", b =>
                 {
                     b.Property<string>("Provider")

@@ -10,6 +10,7 @@ using PaymentOrchestrator.Application.Ledger;
 using PaymentOrchestrator.Application.Outbox;
 using PaymentOrchestrator.Application.Payments;
 using PaymentOrchestrator.Application.Providers;
+using PaymentOrchestrator.Application.Reconciliation;
 using PaymentOrchestrator.Application.Routing;
 using PaymentOrchestrator.Application.Webhooks;
 using PaymentOrchestrator.Infrastructure.Idempotency;
@@ -20,6 +21,7 @@ using PaymentOrchestrator.Infrastructure.Providers;
 using PaymentOrchestrator.Infrastructure.Providers.Paystack;
 using PaymentOrchestrator.Infrastructure.Providers.Simulator;
 using PaymentOrchestrator.Infrastructure.Providers.Stripe;
+using PaymentOrchestrator.Infrastructure.Reconciliation;
 using PaymentOrchestrator.Infrastructure.Webhooks;
 
 namespace PaymentOrchestrator.Infrastructure;
@@ -40,6 +42,9 @@ public static class DependencyInjection
         services.AddScoped<IPaymentRepository, PaymentRepository>();
         services.AddScoped<ILedgerRepository, LedgerRepository>();
         services.AddScoped<IPaymentAttemptLog, EfPaymentAttemptLog>();
+        services.AddScoped<IReconciliationStore, EfReconciliationStore>();
+        services.Configure<ReconciliationOptions>(configuration.GetSection(ReconciliationOptions.SectionName));
+        services.AddHostedService<ReconciliationWorker>();
         services.AddScoped<IIdempotencyStore, PostgresIdempotencyStore>();
         services.AddScoped<IProviderWebhookInbox, PostgresWebhookInbox>();
 
@@ -95,6 +100,7 @@ public static class DependencyInjection
             services.AddSingleton(sp => new SimulatorProvider(
                 simulator, sp.GetRequiredService<SimulatorLedger>(), sp.GetRequiredService<TimeProvider>()));
             services.AddSingleton<IPaymentProvider>(sp => sp.GetServices<SimulatorProvider>().Single(p => p.Name == simulator.Name));
+            services.AddSingleton<ISettlementReportSource>(sp => new SimulatorSettlementSource(simulator.Name, sp.GetRequiredService<SimulatorLedger>()));
         }
 
         var stripe = providers.GetSection("Stripe").Get<StripeOptions>();

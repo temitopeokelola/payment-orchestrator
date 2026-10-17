@@ -14,4 +14,9 @@ internal sealed class PaymentRepository(PaymentsDbContext db) : IPaymentReposito
     // FindAsync checks entities already tracked in this unit of work before querying, which event subscribers rely on.
     public async Task<Payment?> FindAsync(Guid id, CancellationToken cancellationToken) =>
         await db.Payments.FindAsync([id], cancellationToken);
+
+    public async Task<IReadOnlyList<Payment>> ListForProviderAsync(string provider, DateTimeOffset since, DateTimeOffset until, CancellationToken cancellationToken) =>
+        await db.Payments
+            .Where(p => p.Provider == provider && p.CreatedAt >= since && p.CreatedAt < until)
+            .ToListAsync(cancellationToken);
 }
