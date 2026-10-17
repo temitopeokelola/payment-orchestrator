@@ -1,0 +1,59 @@
+name: Load test
+
+on:
+  workflow_dispatch:
+    inputs:
+      rate:
+        description: Payments per second
+        default: "100"
+      duration:
+        description: Test duration
+        default: "60s"
+  push:
+    branches: [main]
+    paths:
+      - "loadtest/**"
+      - ".github/workflows/load-test.yml"
+
+jobs:
+  k6:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Start stack
+        run: docker compose up -d --build postgres rabbitmq api
+
+      - name: Wait for API
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8080/health/ready && exit 0
+            sleep 2
+          done
+          docker compose logs api
+          exit 1
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Run k6
+        run: k6 run loadtest/payments.js --summary-export=summary.json
+        env:
+          RATE: ${{ inputs.rate || '100' }}
+          DURATION: ${{ inputs.duration || '60s' }}
+
+      - name: Publish results
+        if: always()
+        run: |
+          node loadtest/report.js summary.json "a GitHub Actions ubuntu-latest runner ($(nproc) vCPU), API, PostgreSQL and RabbitMQ in Docker on the same machine" k6-notice.txt >> "$GITHUB_STEP_SUMMARY"
+          cat k6-notice.txt
+
+      - name: API logs
+        if: failure()
+        run: docker compose logs api --tail 200
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-summary
+          path: summary.json
