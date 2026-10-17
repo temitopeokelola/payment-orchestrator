@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using PaymentOrchestrator.Application.Abstractions;
+using PaymentOrchestrator.Application.Incidents;
 using PaymentOrchestrator.Application.Ledger;
 using PaymentOrchestrator.Application.Outbox;
 using PaymentOrchestrator.Application.Payments;
@@ -23,6 +24,7 @@ public static class DependencyInjection
         services.AddScoped<ProviderWebhookService>();
         services.AddScoped<LedgerQueries>();
         services.AddScoped<ReconciliationService>();
+        services.AddScoped<IncidentService>();
         services.AddScoped<IDomainEventSubscriber<PaymentCaptured>, LedgerPostingHandler>();
         services.AddScoped<IDomainEventSubscriber<PaymentRefunded>, LedgerPostingHandler>();
         services.AddScoped<MerchantWebhookFanout>();
