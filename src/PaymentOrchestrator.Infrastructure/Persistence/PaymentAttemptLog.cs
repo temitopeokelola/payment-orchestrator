@@ -54,12 +54,18 @@ internal sealed class EfPaymentAttemptLog(PaymentsDbContext db) : IPaymentAttemp
             .Select(a => new PaymentAttempt(a.PaymentId, a.Provider, a.Operation, a.Outcome, a.Code, a.LatencyMs, a.At))
             .ToListAsync(cancellationToken);
 
-    public async Task<IReadOnlyList<AttemptGroup>> GroupSinceAsync(DateTimeOffset since, CancellationToken cancellationToken) =>
-        await db.Set<PaymentAttemptRecord>()
+    public async Task<IReadOnlyList<AttemptGroup>> GroupSinceAsync(DateTimeOffset since, CancellationToken cancellationToken)
+    {
+        var rows = await db.Set<PaymentAttemptRecord>()
             .AsNoTracking()
             .Where(a => a.At >= since)
             .GroupBy(a => new { a.Provider, a.Operation, a.Outcome, a.Code })
-            .Select(g => new AttemptGroup(g.Key.Provider, g.Key.Operation, g.Key.Outcome, g.Key.Code, g.Count(), Math.Round(g.Average(a => a.LatencyMs), 1)))
-            .OrderByDescending(g => g.Count)
+            .Select(g => new { g.Key.Provider, g.Key.Operation, g.Key.Outcome, g.Key.Code, Count = g.Count(), Latency = g.Average(a => a.LatencyMs) })
             .ToListAsync(cancellationToken);
+
+        // Rounded here: PostgreSQL has no round(double precision, int).
+        return [.. rows
+            .OrderByDescending(r => r.Count)
+            .Select(r => new AttemptGroup(r.Provider, r.Operation, r.Outcome, r.Code, r.Count, Math.Round(r.Latency, 1)))];
+    }
 }
