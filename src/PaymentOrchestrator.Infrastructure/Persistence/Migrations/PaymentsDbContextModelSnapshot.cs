@@ -229,6 +229,56 @@ namespace PaymentOrchestrator.Infrastructure.Persistence.Migrations
                     b.ToTable("idempotency_keys", (string)null);
                 });
 
+            modelBuilder.Entity("PaymentOrchestrator.Infrastructure.Outbox.OutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<string>("Data")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("data");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("last_error");
+
+                    b.Property<string>("MerchantId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("merchant_id");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("published_at");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id")
+                        .HasName("pk_outbox_messages");
+
+                    b.HasIndex("OccurredAt")
+                        .HasDatabaseName("ix_outbox_messages_unpublished")
+                        .HasFilter("published_at IS NULL");
+
+                    b.ToTable("outbox_messages", (string)null);
+                });
+
             modelBuilder.Entity("PaymentOrchestrator.Infrastructure.Webhooks.ProviderWebhookEventRecord", b =>
                 {
                     b.Property<string>("Provider")
@@ -267,6 +317,87 @@ namespace PaymentOrchestrator.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_provider_webhook_events_payment_id");
 
                     b.ToTable("provider_webhook_events", (string)null);
+                });
+
+            modelBuilder.Entity("PaymentOrchestrator.Infrastructure.Webhooks.WebhookDelivery", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeliveredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("delivered_at");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("event_type");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("last_error");
+
+                    b.Property<int?>("LastStatusCode")
+                        .HasColumnType("integer")
+                        .HasColumnName("last_status_code");
+
+                    b.Property<string>("MerchantId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("merchant_id");
+
+                    b.Property<DateTimeOffset?>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("url");
+
+                    b.HasKey("Id")
+                        .HasName("pk_webhook_deliveries");
+
+                    b.HasIndex("NextAttemptAt")
+                        .HasDatabaseName("ix_webhook_deliveries_due")
+                        .HasFilter("status = 'Pending'");
+
+                    b.HasIndex("EventId", "Url")
+                        .IsUnique()
+                        .HasDatabaseName("ix_webhook_deliveries_event_id_url");
+
+                    b.HasIndex("MerchantId", "CreatedAt")
+                        .HasDatabaseName("ix_webhook_deliveries_merchant_id_created_at");
+
+                    b.ToTable("webhook_deliveries", (string)null);
                 });
 
             modelBuilder.Entity("PaymentOrchestrator.Domain.Ledger.JournalEntry", b =>

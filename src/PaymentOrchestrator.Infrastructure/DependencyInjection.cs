@@ -5,9 +5,12 @@ using Microsoft.Extensions.DependencyInjection;
 using PaymentOrchestrator.Application.Abstractions;
 using PaymentOrchestrator.Application.Idempotency;
 using PaymentOrchestrator.Application.Ledger;
+using PaymentOrchestrator.Application.Outbox;
 using PaymentOrchestrator.Application.Providers;
 using PaymentOrchestrator.Application.Webhooks;
 using PaymentOrchestrator.Infrastructure.Idempotency;
+using PaymentOrchestrator.Infrastructure.Messaging;
+using PaymentOrchestrator.Infrastructure.Outbox;
 using PaymentOrchestrator.Infrastructure.Persistence;
 using PaymentOrchestrator.Infrastructure.Providers.Paystack;
 using PaymentOrchestrator.Infrastructure.Providers.Simulator;
@@ -37,8 +40,35 @@ public static class DependencyInjection
         services.Configure<LedgerOptions>(configuration.GetSection(LedgerOptions.SectionName));
 
         services.AddPaymentProviders(configuration.GetSection("Providers"));
+        services.AddMessaging(configuration);
 
         return services;
+    }
+
+    private static void AddMessaging(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<WorkerOptions>(configuration.GetSection(WorkerOptions.SectionName));
+        services.Configure<MerchantWebhookOptions>(configuration.GetSection("Merchants"));
+
+        services.AddScoped<IOutbox, EfOutbox>();
+        services.AddScoped<IWebhookDeliveryStore, PostgresWebhookDeliveryStore>();
+        services.AddSingleton<IMerchantWebhookDirectory, ConfigurationMerchantWebhookDirectory>();
+        services.AddHttpClient(WebhookDeliveryWorker.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10));
+
+        var rabbit = configuration.GetSection(RabbitMqOptions.SectionName).Get<RabbitMqOptions>() ?? new RabbitMqOptions();
+        if (string.IsNullOrWhiteSpace(rabbit.ConnectionString))
+        {
+            services.AddSingleton<IEventPublisher, InMemoryEventPublisher>();
+        }
+        else
+        {
+            services.AddSingleton(new RabbitMqConnection(rabbit));
+            services.AddSingleton<IEventPublisher, RabbitMqPublisher>();
+            services.AddHostedService<RabbitMqWebhookConsumer>();
+        }
+
+        services.AddHostedService<OutboxProcessor>();
+        services.AddHostedService<WebhookDeliveryWorker>();
     }
 
     private static void AddPaymentProviders(this IServiceCollection services, IConfiguration providers)

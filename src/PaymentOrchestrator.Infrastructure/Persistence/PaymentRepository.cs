@@ -11,6 +11,7 @@ internal sealed class PaymentRepository(PaymentsDbContext db) : IPaymentReposito
     public Task<Payment?> GetAsync(Guid id, string merchantId, CancellationToken cancellationToken) =>
         db.Payments.SingleOrDefaultAsync(p => p.Id == id && p.MerchantId == merchantId, cancellationToken);
 
-    public Task<Payment?> FindAsync(Guid id, CancellationToken cancellationToken) =>
-        db.Payments.SingleOrDefaultAsync(p => p.Id == id, cancellationToken);
+    // FindAsync checks entities already tracked in this unit of work before querying, which event subscribers rely on.
+    public async Task<Payment?> FindAsync(Guid id, CancellationToken cancellationToken) =>
+        await db.Payments.FindAsync([id], cancellationToken);
 }
