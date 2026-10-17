@@ -18,6 +18,7 @@ public sealed class LedgerPostingHandler(
         // Fee rates are taken at posting time and frozen into the entry, so later rate changes don't rewrite history.
         var providerFee = providers.Find(domainEvent.Provider)?.Capabilities.FeeBasisPoints ?? 0;
 
+        Telemetry.LedgerEntries.Add(1, new KeyValuePair<string, object?>("type", "capture"));
         ledger.Add(JournalEntry.ForCapture(
             domainEvent.PaymentId,
             domainEvent.MerchantId,
@@ -32,6 +33,7 @@ public sealed class LedgerPostingHandler(
 
     public Task HandleAsync(PaymentRefunded domainEvent, CancellationToken cancellationToken)
     {
+        Telemetry.LedgerEntries.Add(1, new KeyValuePair<string, object?>("type", "refund"));
         ledger.Add(JournalEntry.ForRefund(
             domainEvent.PaymentId,
             domainEvent.MerchantId,

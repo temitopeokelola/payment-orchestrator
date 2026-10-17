@@ -26,6 +26,8 @@ public sealed partial class PaymentService(
             request.CustomerEmail,
             clock.GetUtcNow());
 
+        Telemetry.PaymentsCreated.Add(1, new KeyValuePair<string, object?>("currency", payment.Amount.Currency));
+
         // Persist before calling out, so the payment exists even if we crash mid-request.
         payments.Add(payment);
         await unitOfWork.SaveChangesAsync(cancellationToken);
@@ -40,6 +42,11 @@ public sealed partial class PaymentService(
 
         await AuthorizeWithFailoverAsync(payment, candidates, request.Capture, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        Telemetry.PaymentOutcomes.Add(
+            1,
+            new KeyValuePair<string, object?>("provider", payment.Provider ?? "none"),
+            new KeyValuePair<string, object?>("status", PaymentResponse.From(payment).Status));
 
         return PaymentResponse.From(payment);
     }
@@ -195,16 +202,33 @@ public sealed partial class PaymentService(
         Func<CancellationToken, Task<ProviderResult>> call,
         CancellationToken cancellationToken)
     {
+        using var activity = Telemetry.ActivitySource.StartActivity($"provider.{operation}", ActivityKind.Client);
+        activity?.SetTag("payment.id", payment.Id);
+        activity?.SetTag("payment.provider", provider.Name);
+
         var started = Stopwatch.GetTimestamp();
         var result = await call(cancellationToken);
+        var elapsed = Stopwatch.GetElapsedTime(started);
+
+        var outcome = result.Outcome.ToString().ToLowerInvariant();
+        activity?.SetTag("payment.provider.outcome", outcome);
+        activity?.SetTag("payment.provider.code", result.Code);
+        if (result.Outcome is ProviderOutcome.Unavailable or ProviderOutcome.Unknown)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, result.Code);
+        }
+
+        var tags = new TagList { { "provider", provider.Name }, { "operation", operation }, { "outcome", outcome } };
+        Telemetry.ProviderCalls.Add(1, tags);
+        Telemetry.ProviderCallDuration.Record(elapsed.TotalSeconds, tags);
 
         attempts.Record(new PaymentAttempt(
             payment.Id,
             provider.Name,
             operation,
-            result.Outcome.ToString().ToLowerInvariant(),
+            outcome,
             result.Code,
-            Math.Round(Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1),
+            Math.Round(elapsed.TotalMilliseconds, 1),
             clock.GetUtcNow()));
 
         return result;

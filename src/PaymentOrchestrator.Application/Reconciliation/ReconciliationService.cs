@@ -84,6 +84,15 @@ public sealed class ReconciliationService(
                 "We recorded a capture the provider has no record of."));
         }
 
+        foreach (var item in items)
+        {
+            Telemetry.ReconciliationDifferences.Add(
+                1,
+                new KeyValuePair<string, object?>("provider", source.Provider),
+                new KeyValuePair<string, object?>("kind", item.Kind.ToString()),
+                new KeyValuePair<string, object?>("resolved", item.Resolved));
+        }
+
         var run = new ReconciliationRun(Guid.CreateVersion7(startedAt), source.Provider, from, to, startedAt, clock.GetUtcNow(), matched, items);
         store.Add(run);
 
