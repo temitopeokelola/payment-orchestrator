@@ -1,11 +1,14 @@
 using System.Net.Http.Headers;
+using Anthropic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PaymentOrchestrator.Application.Abstractions;
 using PaymentOrchestrator.Application.Idempotency;
+using PaymentOrchestrator.Application.Incidents;
 using PaymentOrchestrator.Application.Ledger;
 using PaymentOrchestrator.Application.Outbox;
 using PaymentOrchestrator.Application.Payments;
@@ -14,6 +17,7 @@ using PaymentOrchestrator.Application.Reconciliation;
 using PaymentOrchestrator.Application.Routing;
 using PaymentOrchestrator.Application.Webhooks;
 using PaymentOrchestrator.Infrastructure.Idempotency;
+using PaymentOrchestrator.Infrastructure.Incidents;
 using PaymentOrchestrator.Infrastructure.Messaging;
 using PaymentOrchestrator.Infrastructure.Outbox;
 using PaymentOrchestrator.Infrastructure.Persistence;
@@ -41,7 +45,21 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<PaymentsDbContext>());
         services.AddScoped<IPaymentRepository, PaymentRepository>();
         services.AddScoped<ILedgerRepository, LedgerRepository>();
-        services.AddScoped<IPaymentAttemptLog, EfPaymentAttemptLog>();
+        services.AddScoped<EfPaymentAttemptLog>();
+        services.AddScoped<IPaymentAttemptLog>(sp => sp.GetRequiredService<EfPaymentAttemptLog>());
+        services.AddScoped<IAttemptStatistics>(sp => sp.GetRequiredService<EfPaymentAttemptLog>());
+
+        var incidents = configuration.GetSection(IncidentSummaryOptions.SectionName).Get<IncidentSummaryOptions>() ?? new IncidentSummaryOptions();
+        if (string.IsNullOrWhiteSpace(incidents.AnthropicApiKey))
+        {
+            services.AddSingleton<IIncidentSummarizer, NoIncidentSummarizer>();
+        }
+        else
+        {
+            services.AddSingleton(new AnthropicClient { ApiKey = incidents.AnthropicApiKey });
+            services.AddSingleton<IIncidentSummarizer>(sp => new ClaudeIncidentSummarizer(
+                sp.GetRequiredService<AnthropicClient>(), incidents, sp.GetRequiredService<ILogger<ClaudeIncidentSummarizer>>()));
+        }
         services.AddScoped<IReconciliationStore, EfReconciliationStore>();
         services.Configure<ReconciliationOptions>(configuration.GetSection(ReconciliationOptions.SectionName));
         services.AddHostedService<ReconciliationWorker>();

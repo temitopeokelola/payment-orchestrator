@@ -1,4 +1,5 @@
 using PaymentOrchestrator.Api.Authentication;
+using PaymentOrchestrator.Application.Incidents;
 using PaymentOrchestrator.Application.Ledger;
 using PaymentOrchestrator.Application.Reconciliation;
 
@@ -49,6 +50,11 @@ internal static class AdminEndpoints
             .WithName("GetReconciliationRun")
             .Produces<ReconciliationRun>()
             .Produces(StatusCodes.Status404NotFound);
+
+        group.MapGet("/incidents/summary", async (int? minutes, IncidentService incidents, CancellationToken ct) =>
+                Results.Ok(await incidents.SummarizeAsync(minutes ?? 15, ct)))
+            .WithName("GetIncidentSummary")
+            .Produces<IncidentSummary>();
 
         return app;
     }

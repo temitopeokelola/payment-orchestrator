@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using PaymentOrchestrator.Application.Incidents;
 using PaymentOrchestrator.Application.Payments;
 
 namespace PaymentOrchestrator.Infrastructure.Persistence;
@@ -32,7 +33,7 @@ internal sealed class PaymentAttemptRecordConfiguration : IEntityTypeConfigurati
     }
 }
 
-internal sealed class EfPaymentAttemptLog(PaymentsDbContext db) : IPaymentAttemptLog
+internal sealed class EfPaymentAttemptLog(PaymentsDbContext db) : IPaymentAttemptLog, IAttemptStatistics
 {
     public void Record(PaymentAttempt attempt) => db.Set<PaymentAttemptRecord>().Add(new PaymentAttemptRecord
     {
@@ -51,5 +52,14 @@ internal sealed class EfPaymentAttemptLog(PaymentsDbContext db) : IPaymentAttemp
             .Where(a => a.PaymentId == paymentId)
             .OrderBy(a => a.Id)
             .Select(a => new PaymentAttempt(a.PaymentId, a.Provider, a.Operation, a.Outcome, a.Code, a.LatencyMs, a.At))
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<AttemptGroup>> GroupSinceAsync(DateTimeOffset since, CancellationToken cancellationToken) =>
+        await db.Set<PaymentAttemptRecord>()
+            .AsNoTracking()
+            .Where(a => a.At >= since)
+            .GroupBy(a => new { a.Provider, a.Operation, a.Outcome, a.Code })
+            .Select(g => new AttemptGroup(g.Key.Provider, g.Key.Operation, g.Key.Outcome, g.Key.Code, g.Count(), Math.Round(g.Average(a => a.LatencyMs), 1)))
+            .OrderByDescending(g => g.Count)
             .ToListAsync(cancellationToken);
 }
