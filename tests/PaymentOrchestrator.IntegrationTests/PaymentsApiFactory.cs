@@ -36,8 +36,10 @@ public sealed class PaymentsApiFactory : WebApplicationFactory<Program>, IAsyncL
 
         // Health-based demotion is covered by unit tests; keep routing deterministic across shared integration tests.
         builder.UseSetting("Routing:MinimumSamples", "100000");
-        builder.UseSetting("Routing:CircuitMinimumThroughput", "6");
-        builder.UseSetting("Routing:CircuitBreakSeconds", "1");
+        // Test cards deliberately produce timeouts and outages; only the chaos provider gets a sensitive breaker.
+        builder.UseSetting("Routing:CircuitMinimumThroughput", "100000");
+        builder.UseSetting("Routing:CircuitOverrides:chaos-primary:MinimumThroughput", "6");
+        builder.UseSetting("Routing:CircuitOverrides:chaos-primary:BreakSeconds", "1");
 
         // A dedicated pair of providers for circuit breaker tests, isolated by currency.
         builder.UseSetting("Providers:Simulators:2:Name", "chaos-primary");

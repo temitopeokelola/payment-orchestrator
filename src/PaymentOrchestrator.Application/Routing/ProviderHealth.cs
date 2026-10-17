@@ -26,6 +26,21 @@ public sealed class RoutingOptions
 
     /// <summary>...and stay open this long before letting a trial call through.</summary>
     public int CircuitBreakSeconds { get; set; } = 15;
+
+    /// <summary>Per-provider breaker tuning, keyed by provider name. High-volume providers can use stricter settings.</summary>
+    public Dictionary<string, CircuitOverride> CircuitOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public (double FailureRatio, int MinimumThroughput, int BreakSeconds) CircuitFor(string provider) =>
+        CircuitOverrides.TryGetValue(provider, out var o)
+            ? (o.FailureRatio ?? CircuitFailureRatio, o.MinimumThroughput ?? CircuitMinimumThroughput, o.BreakSeconds ?? CircuitBreakSeconds)
+            : (CircuitFailureRatio, CircuitMinimumThroughput, CircuitBreakSeconds);
+}
+
+public sealed class CircuitOverride
+{
+    public double? FailureRatio { get; set; }
+    public int? MinimumThroughput { get; set; }
+    public int? BreakSeconds { get; set; }
 }
 
 public enum CircuitState

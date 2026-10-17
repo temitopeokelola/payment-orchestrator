@@ -22,16 +22,17 @@ internal sealed class ResilientPaymentProvider : IPaymentProvider
     {
         _inner = inner;
         _health = health;
+        var (failureRatio, minimumThroughput, breakSeconds) = options.CircuitFor(inner.Name);
 
         _pipeline = new ResiliencePipelineBuilder<ProviderResult> { TimeProvider = clock }
             .AddCircuitBreaker(new CircuitBreakerStrategyOptions<ProviderResult>
             {
                 ShouldHandle = new PredicateBuilder<ProviderResult>()
                     .HandleResult(r => r.Outcome is ProviderOutcome.Unavailable or ProviderOutcome.Unknown),
-                FailureRatio = options.CircuitFailureRatio,
-                MinimumThroughput = options.CircuitMinimumThroughput,
+                FailureRatio = failureRatio,
+                MinimumThroughput = minimumThroughput,
                 SamplingDuration = TimeSpan.FromSeconds(options.CircuitSamplingSeconds),
-                BreakDuration = TimeSpan.FromSeconds(options.CircuitBreakSeconds),
+                BreakDuration = TimeSpan.FromSeconds(breakSeconds),
                 OnOpened = args => SetCircuit(CircuitState.Open, clock.GetUtcNow() + args.BreakDuration),
                 OnHalfOpened = _ => SetCircuit(CircuitState.HalfOpen),
                 OnClosed = _ => SetCircuit(CircuitState.Closed),
