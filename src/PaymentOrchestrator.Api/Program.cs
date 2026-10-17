@@ -2,11 +2,18 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using PaymentOrchestrator.Api.Authentication;
 using PaymentOrchestrator.Api.Endpoints;
 using PaymentOrchestrator.Api.ErrorHandling;
 using PaymentOrchestrator.Application;
+using PaymentOrchestrator.Application.Providers;
+using PaymentOrchestrator.Application.Routing;
 using PaymentOrchestrator.Infrastructure;
 using PaymentOrchestrator.Infrastructure.Persistence;
 using Scalar.AspNetCore;
@@ -34,6 +41,31 @@ builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 builder.Services.AddOpenApi();
 
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<PaymentsDbContext>("database", tags: ["ready"]);
+
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource.AddService("payment-orchestrator"))
+    .WithTracing(tracing =>
+    {
+        tracing
+            .AddSource(Telemetry.Name, "RabbitMQ.Client.Publisher", "RabbitMQ.Client.Subscriber")
+            .AddAspNetCoreInstrumentation(o => o.Filter = ctx => !ctx.Request.Path.StartsWithSegments("/metrics") && !ctx.Request.Path.StartsWithSegments("/health"))
+            .AddHttpClientInstrumentation()
+            .AddNpgsql();
+
+        // Export traces when a collector is configured (Jaeger in docker compose).
+        if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
+        {
+            tracing.AddOtlpExporter();
+        }
+    })
+    .WithMetrics(metrics => metrics
+        .AddMeter(Telemetry.Name)
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddPrometheusExporter());
+
 var app = builder.Build();
 
 app.UseExceptionHandler();
@@ -58,7 +90,13 @@ app.Use((context, next) =>
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" })).ExcludeFromDescription();
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
+app.MapPrometheusScrapingEndpoint();
+
+InfrastructureTelemetry.RegisterProviderGauges(
+    app.Services.GetRequiredService<IProviderRegistry>(),
+    app.Services.GetRequiredService<IProviderHealth>());
 app.MapPaymentEndpoints();
 app.MapLedgerEndpoints();
 app.MapProviderEndpoints();

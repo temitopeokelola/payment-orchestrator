@@ -99,6 +99,8 @@ internal sealed partial class WebhookDeliveryWorker(
             using var response = await httpClients.CreateClient(HttpClientName).SendAsync(request, cancellationToken);
             delivery.LastStatusCode = (int)response.StatusCode;
 
+            InfrastructureTelemetry.WebhookAttempts.Add(1, new KeyValuePair<string, object?>("result", response.IsSuccessStatusCode ? "delivered" : "http_error"));
+
             if (response.IsSuccessStatusCode)
             {
                 delivery.Status = WebhookDeliveryStatus.Delivered;
@@ -113,6 +115,7 @@ internal sealed partial class WebhookDeliveryWorker(
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
         {
             delivery.LastStatusCode = null;
+            InfrastructureTelemetry.WebhookAttempts.Add(1, new KeyValuePair<string, object?>("result", "transport_error"));
             ScheduleRetry(delivery, ex.Message);
         }
     }

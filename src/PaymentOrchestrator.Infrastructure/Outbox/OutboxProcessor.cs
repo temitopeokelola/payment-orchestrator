@@ -82,6 +82,10 @@ internal sealed partial class OutboxProcessor(
                 await publisher.PublishAsync(message.ToIntegrationEvent(), cancellationToken);
                 message.PublishedAt = clock.GetUtcNow();
                 published++;
+
+                var type = new KeyValuePair<string, object?>("type", message.Type);
+                InfrastructureTelemetry.OutboxPublished.Add(1, type);
+                InfrastructureTelemetry.OutboxLag.Record((message.PublishedAt.Value - message.OccurredAt).TotalSeconds, type);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
